@@ -17,6 +17,7 @@ except ImportError:
 
 
 
+
 # Whisper Local Model (ถ้ามี)
 whisper_model = None
 
