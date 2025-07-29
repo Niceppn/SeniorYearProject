@@ -627,41 +627,63 @@ Total Energy: {np.sum(magnitude**2):.2e}"""
 
 def main():
     print("=== Interactive Audio Analyzer ===")
-    print("เลือกโหมดการวิเคราะห์:")
-    print("1. ไฟล์เดียว (ไฟล์ในเครื่อง)")
-    print("2. ไฟล์เดียว (URL)")
-    print("3. เปรียบเทียบเสียงคน vs AI (ไฟล์ในเครื่อง)")
+    print("กำลังประมวลผลไฟล์ทั้งหมดในโฟลเดอร์ downloads...")
     
-    mode_choice = input("เลือก (1-3): ").strip()
+    mode_choice = "1"  # ใช้โหมด 1 เป็นค่าเริ่มต้น
     
-    if mode_choice == "1":
-        audio_file = input("ใส่ path ของไฟล์เสียง: ").strip()
-        audio_path = audio_file
-        analyzer = InteractiveAudioAnalyzer(audio_path)
-        run_single_analysis(analyzer)
-        
-    elif mode_choice == "2":
-        audio_url = input("ใส่ URL ของไฟล์เสียง: ").strip()
-        audio_path, temp_file = download_audio(audio_url)
-        if audio_path:
-            analyzer = InteractiveAudioAnalyzer(audio_path)
-            run_single_analysis(analyzer)
-            if temp_file:
-                os.unlink(temp_file)
-        
-    elif mode_choice == "3":
-        print("\n=== เปรียบเทียบเสียงคน vs AI (ไฟล์ในเครื่อง) ===")
-        human_file = input("ใส่ path ของไฟล์เสียงคนจริง: ").strip()
-        ai_file = input("ใส่ path ของไฟล์เสียง AI: ").strip()
+    # สร้างโฟลเดอร์ ai-graph หากไม่มี
+    ai_graph_folder = "ai-graph"
+    if not os.path.exists(ai_graph_folder):
+        os.makedirs(ai_graph_folder)
+        print(f"สร้างโฟลเดอร์ {ai_graph_folder} แล้ว")
+    
+    # ค้นหาไฟล์เสียงทั้งหมดในโฟลเดอร์ downloads
+    downloads_folder = "downloads"
+    if not os.path.exists(downloads_folder):
+        print(f"ไม่พบโฟลเดอร์ {downloads_folder}")
+        return
+    
+    # รายการนามสกุลไฟล์เสียงที่รองรับ
+    audio_extensions = ['.wav', '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wma']
+    audio_files = []
+    
+    for file in os.listdir(downloads_folder):
+        file_path = os.path.join(downloads_folder, file)
+        if os.path.isfile(file_path):
+            file_ext = os.path.splitext(file)[1].lower()
+            if file_ext in audio_extensions:
+                audio_files.append(file_path)
+    
+    if not audio_files:
+        print(f"ไม่พบไฟล์เสียงในโฟลเดอร์ {downloads_folder}")
+        print(f"รองรับนามสกุลไฟล์: {', '.join(audio_extensions)}")
+        return
+    
+    print(f"พบไฟล์เสียง {len(audio_files)} ไฟล์:")
+    for i, file in enumerate(audio_files, 1):
+        print(f"  {i}. {os.path.basename(file)}")
+    
+    # ประมวลผลไฟล์ทีละไฟล์
+    for i, audio_file in enumerate(audio_files, 1):
+        print(f"\n{'='*60}")
+        print(f"กำลังประมวลผลไฟล์ที่ {i}/{len(audio_files)}: {os.path.basename(audio_file)}")
+        print(f"{'='*60}")
         
         try:
-            run_comparison_analysis(human_file, ai_file)
-        except FileNotFoundError as e:
-            print(f"ไม่พบไฟล์: {e}")
+            # สร้าง analyzer สำหรับไฟล์นี้
+            analyzer = InteractiveAudioAnalyzer(audio_file)
+            
+            # รัน analysis และบันทึกภาพ
+            run_batch_analysis(analyzer, audio_file, ai_graph_folder)
+            
         except Exception as e:
-            print(f"เกิดข้อผิดพลาด: {e}")
-    else:
-        print("กรุณาเลือก 1-3")
+            print(f"เกิดข้อผิดพลาดกับไฟล์ {os.path.basename(audio_file)}: {e}")
+            continue
+    
+    print(f"\n{'='*60}")
+    print("ประมวลผลเสร็จสิ้น!")
+    print(f"ภาพกราฟทั้งหมดถูกบันทึกในโฟลเดอร์: {ai_graph_folder}")
+    print(f"{'='*60}")
 
 def download_audio(url):
     """ดาวน์โหลดไฟล์เสียงจาก URL"""
@@ -677,6 +699,487 @@ def download_audio(url):
     except Exception as e:
         print(f"ไม่สามารถดาวน์โหลดได้: {e}")
         return None, None
+
+def run_batch_analysis(analyzer, audio_file, output_folder):
+    """รันการวิเคราะห์แบบ batch และบันทึกภาพไปยังโฟลเดอร์ที่กำหนด"""
+    # สร้างชื่อไฟล์ output จากชื่อไฟล์ต้นฉบับ
+    base_filename = os.path.splitext(os.path.basename(audio_file))[0]
+    
+    # ปิดการแสดงกราฟแบบ interactive
+    plt.ioff()
+    
+    print("  กำลังสร้าง Waveform Analysis...")
+    try:
+        # 1. Waveform Analysis
+        fig1 = create_waveform_analysis_batch(analyzer)
+        output_path1 = os.path.join(output_folder, f"{base_filename}_waveform_analysis.png")
+        fig1.savefig(output_path1, dpi=300, bbox_inches='tight')
+        plt.close(fig1)
+        print(f"    บันทึก: {output_path1}")
+    except Exception as e:
+        print(f"    ข้อผิดพลาดใน Waveform Analysis: {e}")
+    
+    print("  กำลังสร้าง Pitch Contour Analysis...")
+    try:
+        # 2. Pitch Contour Analysis
+        fig2 = create_pitch_analysis_batch(analyzer)
+        output_path2 = os.path.join(output_folder, f"{base_filename}_pitch_analysis.png")
+        fig2.savefig(output_path2, dpi=300, bbox_inches='tight')
+        plt.close(fig2)
+        print(f"    บันทึก: {output_path2}")
+    except Exception as e:
+        print(f"    ข้อผิดพลาดใน Pitch Analysis: {e}")
+    
+    print("  กำลังสร้าง Frequency Domain Analysis...")
+    try:
+        # 3. Frequency Domain Analysis
+        fig3 = create_frequency_analysis_batch(analyzer)
+        output_path3 = os.path.join(output_folder, f"{base_filename}_frequency_analysis.png")
+        fig3.savefig(output_path3, dpi=300, bbox_inches='tight')
+        plt.close(fig3)
+        print(f"    บันทึก: {output_path3}")
+    except Exception as e:
+        print(f"    ข้อผิดพลาดใน Frequency Analysis: {e}")
+    
+    # เปิดการแสดงกราฟแบบ interactive กลับ
+    plt.ion()
+    
+    print(f"  เสร็จสิ้นการประมวลผล: {base_filename}")
+
+def create_waveform_analysis_batch(analyzer):
+    """สร้าง waveform analysis ไว้สำหรับบันทึกเป็นไฟล์"""
+    fig, axes = plt.subplots(4, 2, figsize=(16, 12))
+    fig.suptitle(f'Waveform Analysis - {os.path.basename(analyzer.audio_path)}', fontsize=16, fontweight='bold')
+    
+    # เวลาทั้งหมด
+    t_full = np.linspace(0, analyzer.duration, len(analyzer.y))
+    
+    # 1. Raw Waveform
+    axes[0,0].plot(t_full, analyzer.y, color='blue', linewidth=0.5)
+    axes[0,0].set_title('1. Raw Waveform (คลื่นเสียงดิบ)')
+    axes[0,0].set_ylabel('Amplitude')
+    axes[0,0].grid(True, alpha=0.3)
+    axes[0,0].set_xlim(0, analyzer.duration)
+    
+    # 2. Amplitude Envelope
+    envelope = np.abs(signal.hilbert(analyzer.y))
+    axes[0,1].plot(t_full, envelope, color='red', linewidth=1)
+    axes[0,1].fill_between(t_full, envelope, alpha=0.3, color='red')
+    axes[0,1].set_title('2. Amplitude Envelope (ซองขีดคลื่น)')
+    axes[0,1].set_ylabel('Amplitude')
+    axes[0,1].grid(True, alpha=0.3)
+    
+    # 3. RMS Energy
+    frame_length = 2048
+    hop_length = 512
+    rms = librosa.feature.rms(y=analyzer.y, frame_length=frame_length, hop_length=hop_length)[0]
+    t_rms = librosa.frames_to_time(np.arange(len(rms)), sr=analyzer.sr, hop_length=hop_length)
+    
+    axes[1,0].plot(t_rms, rms, color='green', linewidth=2)
+    axes[1,0].fill_between(t_rms, rms, alpha=0.4, color='green')
+    axes[1,0].set_title('3. RMS Energy (พลังงานเฉลี่ย)')
+    axes[1,0].set_ylabel('RMS')
+    axes[1,0].grid(True, alpha=0.3)
+    
+    # 4. Zero Crossing Rate
+    zcr = librosa.feature.zero_crossing_rate(analyzer.y, frame_length=frame_length, hop_length=hop_length)[0]
+    t_zcr = librosa.frames_to_time(np.arange(len(zcr)), sr=analyzer.sr, hop_length=hop_length)
+    
+    axes[1,1].plot(t_zcr, zcr, color='purple', linewidth=2)
+    axes[1,1].set_title('4. Zero Crossing Rate (อัตราผ่านศูนย์)')
+    axes[1,1].set_ylabel('ZCR')
+    axes[1,1].grid(True, alpha=0.3)
+    
+    # 5. Spectral Centroid
+    spectral_centroids = librosa.feature.spectral_centroid(y=analyzer.y, sr=analyzer.sr, hop_length=hop_length)[0]
+    t_sc = librosa.frames_to_time(np.arange(len(spectral_centroids)), sr=analyzer.sr, hop_length=hop_length)
+    
+    axes[2,0].plot(t_sc, spectral_centroids, color='orange', linewidth=2)
+    axes[2,0].set_title('5. Spectral Centroid (จุดศูนย์กลางความถี่)')
+    axes[2,0].set_ylabel('Frequency (Hz)')
+    axes[2,0].grid(True, alpha=0.3)
+    
+    # 6. Pitch (F0)
+    pitches, magnitudes = librosa.piptrack(y=analyzer.y, sr=analyzer.sr, hop_length=hop_length)
+    pitch_values = []
+    pitch_times = []
+    
+    for t in range(pitches.shape[1]):
+        index = magnitudes[:, t].argmax()
+        pitch = pitches[index, t]
+        if pitch > 0:
+            pitch_values.append(pitch)
+            pitch_times.append(librosa.frames_to_time(t, sr=analyzer.sr, hop_length=hop_length))
+    
+    if pitch_values:
+        axes[2,1].plot(pitch_times, pitch_values, 'o-', color='red', markersize=2, linewidth=1)
+        axes[2,1].set_title('6. Fundamental Frequency (ความถี่พื้นฐาน)')
+        axes[2,1].set_ylabel('F0 (Hz)')
+        axes[2,1].grid(True, alpha=0.3)
+    
+    # 7. MFCC (แสดงแค่ 3 coefficients แรก)
+    mfccs = librosa.feature.mfcc(y=analyzer.y, sr=analyzer.sr, n_mfcc=3, hop_length=hop_length)
+    t_mfcc = librosa.frames_to_time(np.arange(mfccs.shape[1]), sr=analyzer.sr, hop_length=hop_length)
+    
+    colors_mfcc = ['red', 'blue', 'green']
+    for i in range(3):
+        axes[3,0].plot(t_mfcc, mfccs[i], color=colors_mfcc[i], linewidth=2, label=f'MFCC {i+1}')
+    axes[3,0].set_title('7. MFCC Features (3 coefficients แรก)')
+    axes[3,0].set_ylabel('MFCC Value')
+    axes[3,0].set_xlabel('เวลา (วินาที)')
+    axes[3,0].legend()
+    axes[3,0].grid(True, alpha=0.3)
+    
+    # 8. Onset Detection
+    onset_frames = librosa.onset.onset_detect(y=analyzer.y, sr=analyzer.sr, hop_length=hop_length)
+    onset_times = librosa.frames_to_time(onset_frames, sr=analyzer.sr, hop_length=hop_length)
+    
+    # แสดง waveform พร้อม onset markers
+    axes[3,1].plot(t_full, analyzer.y, color='blue', alpha=0.6, linewidth=0.5)
+    for onset_time in onset_times:
+        axes[3,1].axvline(x=onset_time, color='red', linestyle='--', alpha=0.8)
+    axes[3,1].set_title('8. Onset Detection (จุดเริ่มเสียง)')
+    axes[3,1].set_ylabel('Amplitude')
+    axes[3,1].set_xlabel('เวลา (วินาที)')
+    axes[3,1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    return fig
+
+def create_pitch_analysis_batch(analyzer):
+    """สร้าง pitch analysis ไว้สำหรับบันทึกเป็นไฟล์"""
+    fig, axes = plt.subplots(4, 2, figsize=(16, 16))
+    fig.suptitle(f'Pitch Contour & Melody Analysis - {os.path.basename(analyzer.audio_path)}', fontsize=16, fontweight='bold')
+    
+    hop_length = 512
+    
+    # คำนวณ pitch ด้วย piptrack
+    pitches, magnitudes = librosa.piptrack(y=analyzer.y, sr=analyzer.sr, hop_length=hop_length, threshold=0.1)
+    
+    pitch_values = []
+    pitch_times = []
+    pitch_confidences = []
+    
+    for t in range(pitches.shape[1]):
+        index = magnitudes[:, t].argmax()
+        pitch = pitches[index, t]
+        confidence = magnitudes[index, t]
+        
+        if pitch > 0 and confidence > 0.1:
+            pitch_values.append(pitch)
+            pitch_times.append(librosa.frames_to_time(t, sr=analyzer.sr, hop_length=hop_length))
+            pitch_confidences.append(confidence)
+    
+    pitch_times = np.array(pitch_times)
+    pitch_values = np.array(pitch_values)
+    pitch_confidences = np.array(pitch_confidences)
+    
+    # กรอง outliers
+    if len(pitch_values) > 0:
+        Q1 = np.percentile(pitch_values, 25)
+        Q3 = np.percentile(pitch_values, 75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        
+        valid_mask = (pitch_values >= lower_bound) & (pitch_values <= upper_bound) & (pitch_values >= 50) & (pitch_values <= 1000)
+        
+        pitch_times_clean = pitch_times[valid_mask]
+        pitch_values_clean = pitch_values[valid_mask]
+        pitch_confidences_clean = pitch_confidences[valid_mask]
+    else:
+        pitch_times_clean = np.array([])
+        pitch_values_clean = np.array([])
+        pitch_confidences_clean = np.array([])
+    
+    # 1. Raw Pitch Contour with Musical Notes Grid
+    if len(pitch_values_clean) > 0:
+        scatter = axes[0,0].scatter(pitch_times_clean, pitch_values_clean, 
+                                  c=pitch_confidences_clean, cmap='viridis', 
+                                  s=20, alpha=0.7)
+        plt.colorbar(scatter, ax=axes[0,0], label='Confidence')
+        
+        axes[0,0].plot(pitch_times_clean, pitch_values_clean, 'b-', alpha=0.5, linewidth=1)
+        
+        # เพิ่มกริดโน้ตดนตรี
+        note_freqs = []
+        note_names = []
+        for octave in range(2, 7):
+            for note_num, note_name in enumerate(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']):
+                freq = 261.63 * (2 ** ((octave-4) + note_num/12))
+                if 50 <= freq <= 1000:
+                    note_freqs.append(freq)
+                    note_names.append(f'{note_name}{octave}')
+        
+        for freq, name in zip(note_freqs, note_names):
+            axes[0,0].axhline(y=freq, color='gray', alpha=0.2, linestyle='--')
+            if name.endswith('C'):
+                axes[0,0].text(0.01, freq, name, fontsize=8, alpha=0.7)
+    
+    axes[0,0].set_title('1. Pitch Contour with Musical Notes')
+    axes[0,0].set_ylabel('Frequency (Hz)')
+    axes[0,0].grid(True, alpha=0.3)
+    axes[0,0].set_ylim(50, 1000)
+    
+    # 2. Melodic Intervals
+    if len(pitch_values_clean) > 1:
+        intervals = []
+        interval_times = []
+        
+        for i in range(1, len(pitch_values_clean)):
+            if pitch_values_clean[i] > 0 and pitch_values_clean[i-1] > 0:
+                interval = 12 * np.log2(pitch_values_clean[i] / pitch_values_clean[i-1])
+                intervals.append(interval)
+                interval_times.append(pitch_times_clean[i])
+        
+        if intervals:
+            axes[0,1].plot(interval_times, intervals, 'r-', linewidth=2, marker='o', markersize=4)
+            axes[0,1].axhline(0, color='black', linestyle='-', alpha=0.5)
+            
+            important_intervals = [-12, -7, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 7, 12]
+            interval_names = ['Octave↓', 'Fifth↓', 'Fourth↓', 'Maj3rd↓', 'Min3rd↓', 'Maj2nd↓', 'Min2nd↓', 
+                            'Unison', 'Min2nd↑', 'Maj2nd↑', 'Min3rd↑', 'Maj3rd↑', 'Fourth↑', 'Fifth↑', 'Octave↑']
+            
+            for interval, name in zip(important_intervals, interval_names):
+                if -15 <= interval <= 15:
+                    axes[0,1].axhline(interval, color='gray', alpha=0.3, linestyle='--')
+                    if interval in [-12, -7, 0, 7, 12]:
+                        axes[0,1].text(0.01, interval, name, fontsize=8, alpha=0.7)
+    
+    axes[0,1].set_title('2. Melodic Intervals (semitones)')
+    axes[0,1].set_ylabel('Interval (semitones)')
+    axes[0,1].grid(True, alpha=0.3)
+    axes[0,1].set_ylim(-15, 15)
+    
+    # 3. Pitch Class Distribution
+    if len(pitch_values_clean) > 0:
+        pitch_classes = []
+        for freq in pitch_values_clean:
+            if freq > 0:
+                midi_note = 69 + 12 * np.log2(freq / 440)
+                pitch_class = int(midi_note) % 12
+                pitch_classes.append(pitch_class)
+        
+        if pitch_classes:
+            pitch_class_counts = np.bincount(pitch_classes, minlength=12)
+            note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            
+            bars = axes[1,0].bar(range(12), pitch_class_counts, 
+                               color=plt.cm.Set3(np.arange(12)), alpha=0.7)
+            axes[1,0].set_xticks(range(12))
+            axes[1,0].set_xticklabels(note_names)
+            
+            total_notes = sum(pitch_class_counts)
+            for i, (bar, count) in enumerate(zip(bars, pitch_class_counts)):
+                if count > 0:
+                    percentage = count / total_notes * 100
+                    axes[1,0].text(i, count + max(pitch_class_counts)*0.01, 
+                                 f'{percentage:.1f}%', ha='center', fontsize=8)
+    
+    axes[1,0].set_title('3. Pitch Class Distribution')
+    axes[1,0].set_ylabel('Count')
+    axes[1,0].set_xlabel('Note')
+    
+    # 4. Pitch Statistics and Histogram
+    if len(pitch_values_clean) > 0:
+        axes[1,1].hist(pitch_values_clean, bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+        
+        mean_pitch = np.mean(pitch_values_clean)
+        median_pitch = np.median(pitch_values_clean)
+        std_pitch = np.std(pitch_values_clean)
+        min_pitch = np.min(pitch_values_clean)
+        max_pitch = np.max(pitch_values_clean)
+        
+        axes[1,1].axvline(mean_pitch, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_pitch:.1f} Hz')
+        axes[1,1].axvline(median_pitch, color='green', linestyle='--', linewidth=2, label=f'Median: {median_pitch:.1f} Hz')
+        axes[1,1].legend()
+        
+        stats_text = f"""Pitch Statistics:
+Mean: {mean_pitch:.1f} Hz
+Median: {median_pitch:.1f} Hz
+Std: {std_pitch:.1f} Hz
+Min: {min_pitch:.1f} Hz
+Max: {max_pitch:.1f} Hz
+Range: {max_pitch-min_pitch:.1f} Hz"""
+        
+        axes[1,1].text(0.02, 0.98, stats_text, transform=axes[1,1].transAxes, 
+                      fontsize=9, verticalalignment='top',
+                      bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8))
+    
+    axes[1,1].set_title('4. Pitch Distribution')
+    axes[1,1].set_xlabel('Frequency (Hz)')
+    axes[1,1].set_ylabel('Count')
+    
+    # 5. Smoothed Pitch Contour
+    if len(pitch_values_clean) > 5:
+        window_length = min(11, len(pitch_values_clean) if len(pitch_values_clean) % 2 == 1 else len(pitch_values_clean) - 1)
+        if window_length >= 3:
+            pitch_smoothed = savgol_filter(pitch_values_clean, window_length, 3)
+            
+            axes[2,0].plot(pitch_times_clean, pitch_values_clean, 'lightblue', alpha=0.5, label='Raw', linewidth=1)
+            axes[2,0].plot(pitch_times_clean, pitch_smoothed, 'red', linewidth=2, label='Smoothed')
+            axes[2,0].legend()
+    
+    axes[2,0].set_title('5. Smoothed Pitch Contour')
+    axes[2,0].set_ylabel('Frequency (Hz)')
+    axes[2,0].grid(True, alpha=0.3)
+    
+    # 6. Vibrato Analysis
+    if len(pitch_values_clean) > 10:
+        window_length = min(11, len(pitch_values_clean) if len(pitch_values_clean) % 2 == 1 else len(pitch_values_clean) - 1)
+        if window_length >= 3:
+            pitch_smoothed = savgol_filter(pitch_values_clean, window_length, 3)
+            vibrato = pitch_values_clean - pitch_smoothed
+            
+            axes[2,1].plot(pitch_times_clean, vibrato, 'orange', linewidth=1.5)
+            axes[2,1].axhline(0, color='black', linestyle='-', alpha=0.3)
+            axes[2,1].fill_between(pitch_times_clean, vibrato, 0, alpha=0.3, color='orange')
+            
+            vibrato_rms = np.sqrt(np.mean(vibrato**2))
+            axes[2,1].text(0.02, 0.98, f'Vibrato RMS: {vibrato_rms:.2f} Hz', 
+                          transform=axes[2,1].transAxes, fontsize=10,
+                          bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.8))
+    
+    axes[2,1].set_title('6. Vibrato Analysis')
+    axes[2,1].set_ylabel('Deviation (Hz)')
+    axes[2,1].grid(True, alpha=0.3)
+    
+    # 7. Pitch Rate of Change
+    if len(pitch_values_clean) > 1:
+        time_diff = np.diff(pitch_times_clean)
+        pitch_diff = np.diff(pitch_values_clean)
+        
+        valid_time_mask = time_diff > 0
+        if np.any(valid_time_mask):
+            pitch_rate = pitch_diff[valid_time_mask] / time_diff[valid_time_mask]
+            pitch_rate_times = pitch_times_clean[1:][valid_time_mask]
+            
+            axes[3,0].plot(pitch_rate_times, pitch_rate, 'purple', linewidth=1.5)
+            axes[3,0].axhline(0, color='black', linestyle='-', alpha=0.3)
+            axes[3,0].fill_between(pitch_rate_times, pitch_rate, 0, alpha=0.3, color='purple')
+    
+    axes[3,0].set_title('7. Pitch Rate of Change')
+    axes[3,0].set_ylabel('Rate (Hz/s)')
+    axes[3,0].set_xlabel('เวลา (วินาที)')
+    axes[3,0].grid(True, alpha=0.3)
+    
+    # 8. Summary Statistics
+    if len(pitch_values_clean) > 0:
+        pitch_range = np.max(pitch_values_clean) - np.min(pitch_values_clean)
+        melody_span = 12 * np.log2(np.max(pitch_values_clean) / np.min(pitch_values_clean))
+        
+        if len(pitch_values_clean) > 2:
+            first_diff = np.diff(pitch_values_clean)
+            second_diff = np.diff(first_diff)
+            smoothness = np.mean(np.abs(second_diff))
+        else:
+            smoothness = 0
+        
+        summary_text = f"""Melody Analysis Summary:
+
+Total Notes: {len(pitch_values_clean)}
+Pitch Range: {pitch_range:.1f} Hz
+Melody Span: {melody_span:.1f} semitones
+
+Average Pitch: {np.mean(pitch_values_clean):.1f} Hz
+Pitch Std Dev: {np.std(pitch_values_clean):.1f} Hz
+
+Melody Smoothness: {smoothness:.2f}
+
+Duration: {pitch_times_clean[-1] - pitch_times_clean[0]:.2f} sec"""
+        
+        axes[3,1].text(0.1, 0.8, summary_text, transform=axes[3,1].transAxes, 
+                      fontsize=10, verticalalignment='top',
+                      bbox=dict(boxstyle="round,pad=0.4", facecolor="lightcyan", alpha=0.8))
+        axes[3,1].set_title('8. Summary Statistics')
+        axes[3,1].axis('off')
+    
+    plt.tight_layout()
+    return fig
+
+def create_frequency_analysis_batch(analyzer):
+    """สร้าง frequency analysis ไว้สำหรับบันทึกเป็นไฟล์"""
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle(f'Frequency Domain Analysis - {os.path.basename(analyzer.audio_path)}', fontsize=16, fontweight='bold')
+    
+    # คำนวณ FFT
+    fft = np.fft.fft(analyzer.y)
+    freqs = np.fft.fftfreq(len(analyzer.y), 1/analyzer.sr)
+    
+    # แสดงเฉพาะความถี่บวก
+    positive_freqs = freqs[:len(freqs)//2]
+    magnitude = np.abs(fft[:len(fft)//2])
+    phase = np.angle(fft[:len(fft)//2])
+    
+    # 1. Magnitude Spectrum (Linear)
+    axes[0,0].plot(positive_freqs, magnitude, color='blue', linewidth=0.5)
+    axes[0,0].set_title('1. Magnitude Spectrum (Linear)')
+    axes[0,0].set_xlabel('ความถี่ (Hz)')
+    axes[0,0].set_ylabel('Magnitude')
+    axes[0,0].grid(True, alpha=0.3)
+    axes[0,0].set_xlim(0, analyzer.sr//2)
+    
+    # 2. Magnitude Spectrum (dB)
+    magnitude_db = 20 * np.log10(magnitude + 1e-10)
+    axes[0,1].plot(positive_freqs, magnitude_db, color='red', linewidth=0.5)
+    axes[0,1].set_title('2. Magnitude Spectrum (dB)')
+    axes[0,1].set_xlabel('ความถี่ (Hz)')
+    axes[0,1].set_ylabel('Magnitude (dB)')
+    axes[0,1].grid(True, alpha=0.3)
+    axes[0,1].set_xlim(0, analyzer.sr//2)
+    
+    # 3. Phase Spectrum
+    axes[0,2].plot(positive_freqs, phase, color='green', linewidth=0.5)
+    axes[0,2].set_title('3. Phase Spectrum')
+    axes[0,2].set_xlabel('ความถี่ (Hz)')
+    axes[0,2].set_ylabel('Phase (radians)')
+    axes[0,2].grid(True, alpha=0.3)
+    axes[0,2].set_xlim(0, analyzer.sr//2)
+    
+    # 4. Power Spectral Density
+    f_psd, psd = signal.welch(analyzer.y, analyzer.sr, nperseg=1024)
+    axes[1,0].semilogy(f_psd, psd, color='purple')
+    axes[1,0].set_title('4. Power Spectral Density')
+    axes[1,0].set_xlabel('ความถี่ (Hz)')
+    axes[1,0].set_ylabel('PSD (V²/Hz)')
+    axes[1,0].grid(True, alpha=0.3)
+    
+    # 5. Cepstrum
+    log_spectrum = np.log(magnitude + 1e-10)
+    cepstrum = np.fft.ifft(log_spectrum).real
+    quefrency = np.arange(len(cepstrum)) / analyzer.sr * 1000
+    
+    max_quefrency_ms = 50
+    max_samples = int(max_quefrency_ms * analyzer.sr / 1000)
+    
+    axes[1,1].plot(quefrency[:max_samples], cepstrum[:max_samples], color='orange')
+    axes[1,1].set_title('5. Cepstrum (0-50ms)')
+    axes[1,1].set_xlabel('Quefrency (ms)')
+    axes[1,1].set_ylabel('Amplitude')
+    axes[1,1].grid(True, alpha=0.3)
+    
+    # 6. Spectral Features Summary
+    spectral_centroid = np.sum(positive_freqs * magnitude) / np.sum(magnitude)
+    spectral_bandwidth = np.sqrt(np.sum(((positive_freqs - spectral_centroid) ** 2) * magnitude) / np.sum(magnitude))
+    spectral_rolloff_idx = np.where(np.cumsum(magnitude) >= 0.85 * np.sum(magnitude))[0]
+    spectral_rolloff = positive_freqs[spectral_rolloff_idx[0]] if len(spectral_rolloff_idx) > 0 else 0
+    
+    features_text = f"""Spectral Features:
+
+Centroid: {spectral_centroid:.1f} Hz
+Bandwidth: {spectral_bandwidth:.1f} Hz
+Rolloff (85%): {spectral_rolloff:.1f} Hz
+Peak Frequency: {positive_freqs[np.argmax(magnitude)]:.1f} Hz
+Total Energy: {np.sum(magnitude**2):.2e}"""
+    
+    axes[1,2].text(0.1, 0.7, features_text, transform=axes[1,2].transAxes, 
+                  fontsize=10, verticalalignment='top',
+                  bbox=dict(boxstyle="round,pad=0.5", facecolor="lightblue", alpha=0.8))
+    axes[1,2].set_title('6. Spectral Features Summary')
+    axes[1,2].axis('off')
+    
+    plt.tight_layout()
+    return fig
 
 def run_single_analysis(analyzer):
     """รันการวิเคราะห์ไฟล์เดียว"""
