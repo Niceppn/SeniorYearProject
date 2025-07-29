@@ -15,8 +15,8 @@ try:
 except ImportError:
     WHISPER_LOCAL_AVAILABLE = False
 
-
-
+# OpenAI Client (จะถูกตั้งค่าผ่านฟังก์ชัน setup_api_key)
+client = None
 
 # Whisper Local Model (ถ้ามี)
 whisper_model = None
