@@ -624,6 +624,145 @@ Total Energy: {np.sum(magnitude**2):.2e}"""
         
         plt.tight_layout()
         plt.show()
+    
+    def plot_mel_spectrogram_analysis(self):
+        """
+        แสดงการวิเคราะห์ Mel Spectrogram แบบละเอียด
+        """
+        fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+        fig.suptitle('การวิเคราะห์ Mel Spectrogram', fontsize=16, fontweight='bold')
+        
+        hop_length = 512
+        n_fft = 2048
+        n_mels = 128
+        
+        print("กำลังคำนวณ Mel Spectrogram...")
+        
+        # 1. Standard Mel Spectrogram
+        mel_spec = librosa.feature.melspectrogram(
+            y=self.y, sr=self.sr, hop_length=hop_length, 
+            n_fft=n_fft, n_mels=n_mels, fmax=self.sr//2
+        )
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+        
+        # Time and frequency axes
+        times = librosa.frames_to_time(np.arange(mel_spec.shape[1]), sr=self.sr, hop_length=hop_length)
+        mel_freqs = librosa.mel_frequencies(n_mels=n_mels, fmax=self.sr//2)
+        
+        # Plot 1: Mel Spectrogram (dB)
+        im1 = axes[0,0].imshow(mel_spec_db, aspect='auto', origin='lower', 
+                              extent=[times[0], times[-1], mel_freqs[0], mel_freqs[-1]], cmap='viridis')
+        axes[0,0].set_title('1. Mel Spectrogram (dB)')
+        axes[0,0].set_xlabel('เวลา (วินาที)')
+        axes[0,0].set_ylabel('ความถี่ (Hz)')
+        plt.colorbar(im1, ax=axes[0,0], label='Power (dB)')
+        
+        # 2. Linear Scale Mel Spectrogram
+        im2 = axes[0,1].imshow(mel_spec, aspect='auto', origin='lower',
+                              extent=[times[0], times[-1], mel_freqs[0], mel_freqs[-1]], cmap='plasma')
+        axes[0,1].set_title('2. Mel Spectrogram (Linear Scale)')
+        axes[0,1].set_xlabel('เวลา (วินาที)')
+        axes[0,1].set_ylabel('ความถี่ (Hz)')
+        plt.colorbar(im2, ax=axes[0,1], label='Power')
+        
+        # 3. Mel-frequency Cepstral Coefficients (MFCCs)
+        mfccs = librosa.feature.mfcc(y=self.y, sr=self.sr, hop_length=hop_length, n_mfcc=13)
+        im3 = axes[1,0].imshow(mfccs, aspect='auto', origin='lower', 
+                              extent=[times[0], times[-1], 1, 13], cmap='coolwarm')
+        axes[1,0].set_title('3. MFCCs (13 coefficients)')
+        axes[1,0].set_xlabel('เวลา (วินาที)')
+        axes[1,0].set_ylabel('MFCC Coefficient')
+        plt.colorbar(im3, ax=axes[1,0], label='MFCC Value')
+        
+        # 4. Delta MFCCs (first derivative)
+        mfccs_delta = librosa.feature.delta(mfccs)
+        im4 = axes[1,1].imshow(mfccs_delta, aspect='auto', origin='lower',
+                              extent=[times[0], times[-1], 1, 13], cmap='RdBu')
+        axes[1,1].set_title('4. Delta MFCCs (First Derivative)')
+        axes[1,1].set_xlabel('เวลา (วินาที)')
+        axes[1,1].set_ylabel('MFCC Coefficient')
+        plt.colorbar(im4, ax=axes[1,1], label='Delta MFCC Value')
+        
+        # 5. Mel Spectrogram Statistics
+        mel_mean = np.mean(mel_spec_db, axis=1)
+        mel_std = np.std(mel_spec_db, axis=1)
+        mel_max = np.max(mel_spec_db, axis=1)
+        mel_min = np.min(mel_spec_db, axis=1)
+        
+        axes[2,0].plot(mel_freqs, mel_mean, 'b-', linewidth=2, label='Mean', alpha=0.8)
+        axes[2,0].fill_between(mel_freqs, mel_mean - mel_std, mel_mean + mel_std, 
+                              alpha=0.3, color='blue', label='±1 Std Dev')
+        axes[2,0].plot(mel_freqs, mel_max, 'r--', linewidth=1, label='Max', alpha=0.7)
+        axes[2,0].plot(mel_freqs, mel_min, 'g--', linewidth=1, label='Min', alpha=0.7)
+        axes[2,0].set_title('5. Mel Spectrogram Statistics')
+        axes[2,0].set_xlabel('ความถี่ (Hz)')
+        axes[2,0].set_ylabel('Power (dB)')
+        axes[2,0].legend()
+        axes[2,0].grid(True, alpha=0.3)
+        axes[2,0].set_xscale('log')
+        
+        # 6. Spectral Features Summary
+        # คำนวณ spectral features จาก mel spectrogram
+        spectral_centroid_mel = np.sum(mel_freqs[:, np.newaxis] * mel_spec, axis=0) / np.sum(mel_spec, axis=0)
+        spectral_rolloff_mel = []
+        spectral_bandwidth_mel = []
+        
+        for frame in range(mel_spec.shape[1]):
+            cumsum = np.cumsum(mel_spec[:, frame])
+            total_energy = cumsum[-1]
+            if total_energy > 0:
+                rolloff_idx = np.where(cumsum >= 0.85 * total_energy)[0]
+                if len(rolloff_idx) > 0:
+                    spectral_rolloff_mel.append(mel_freqs[rolloff_idx[0]])
+                else:
+                    spectral_rolloff_mel.append(mel_freqs[-1])
+                
+                # Bandwidth calculation
+                centroid = spectral_centroid_mel[frame]
+                bandwidth = np.sqrt(np.sum(((mel_freqs - centroid) ** 2)[:, np.newaxis] * 
+                                         mel_spec[:, frame:frame+1], axis=0) / np.sum(mel_spec[:, frame:frame+1], axis=0))
+                spectral_bandwidth_mel.append(bandwidth[0] if len(bandwidth) > 0 else 0)
+            else:
+                spectral_rolloff_mel.append(0)
+                spectral_bandwidth_mel.append(0)
+        
+        # Plot spectral features over time
+        axes[2,1].plot(times, spectral_centroid_mel, 'r-', linewidth=2, label='Spectral Centroid', alpha=0.8)
+        axes[2,1].plot(times, spectral_rolloff_mel, 'g-', linewidth=2, label='Spectral Rolloff (85%)', alpha=0.8)
+        axes[2,1].plot(times, spectral_bandwidth_mel, 'b-', linewidth=2, label='Spectral Bandwidth', alpha=0.8)
+        axes[2,1].set_title('6. Spectral Features Over Time')
+        axes[2,1].set_xlabel('เวลา (วินาที)')
+        axes[2,1].set_ylabel('ความถี่ (Hz)')
+        axes[2,1].legend()
+        axes[2,1].grid(True, alpha=0.3)
+        axes[2,1].set_yscale('log')
+        
+        # Add summary statistics text
+        summary_text = f"""Mel Spectrogram Summary:
+        
+Time Duration: {self.duration:.2f} sec
+Frequency Range: {mel_freqs[0]:.1f} - {mel_freqs[-1]:.1f} Hz
+Mel Bands: {n_mels}
+Hop Length: {hop_length} samples
+FFT Size: {n_fft}
+
+Average Spectral Centroid: {np.mean(spectral_centroid_mel):.1f} Hz
+Average Spectral Rolloff: {np.mean(spectral_rolloff_mel):.1f} Hz
+Average Spectral Bandwidth: {np.mean(spectral_bandwidth_mel):.1f} Hz
+
+Max Power: {np.max(mel_spec_db):.1f} dB
+Min Power: {np.min(mel_spec_db):.1f} dB
+Dynamic Range: {np.max(mel_spec_db) - np.min(mel_spec_db):.1f} dB"""
+        
+        # Add text box with summary
+        fig.text(0.02, 0.02, summary_text, fontsize=9, verticalalignment='bottom',
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+        
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.25)  # Make room for summary text
+        plt.show()
+        
+        return mel_spec, mel_spec_db, mfccs
 
 def main():
     print("=== Interactive Audio Analyzer ===")
@@ -740,6 +879,17 @@ def run_batch_analysis(analyzer, audio_file, output_folder):
         print(f"    บันทึก: {output_path3}")
     except Exception as e:
         print(f"    ข้อผิดพลาดใน Frequency Analysis: {e}")
+    
+    print("  กำลังสร้าง Mel Spectrogram Analysis...")
+    try:
+        # 4. Mel Spectrogram Analysis
+        fig4 = create_mel_spectrogram_analysis_batch(analyzer)
+        output_path4 = os.path.join(output_folder, f"{base_filename}_mel_spectrogram_analysis.png")
+        fig4.savefig(output_path4, dpi=300, bbox_inches='tight')
+        plt.close(fig4)
+        print(f"    บันทึก: {output_path4}")
+    except Exception as e:
+        print(f"    ข้อผิดพลาดใน Mel Spectrogram Analysis: {e}")
     
     # เปิดการแสดงกราฟแบบ interactive กลับ
     plt.ion()
@@ -1181,6 +1331,139 @@ Total Energy: {np.sum(magnitude**2):.2e}"""
     plt.tight_layout()
     return fig
 
+def create_mel_spectrogram_analysis_batch(analyzer):
+    """สร้าง mel spectrogram analysis ไว้สำหรับบันทึกเป็นไฟล์"""
+    fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+    fig.suptitle(f'Mel Spectrogram Analysis - {os.path.basename(analyzer.audio_path)}', fontsize=16, fontweight='bold')
+    
+    hop_length = 512
+    n_fft = 2048
+    n_mels = 128
+    
+    # 1. Standard Mel Spectrogram
+    mel_spec = librosa.feature.melspectrogram(
+        y=analyzer.y, sr=analyzer.sr, hop_length=hop_length, 
+        n_fft=n_fft, n_mels=n_mels, fmax=analyzer.sr//2
+    )
+    mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+    
+    # Time and frequency axes
+    times = librosa.frames_to_time(np.arange(mel_spec.shape[1]), sr=analyzer.sr, hop_length=hop_length)
+    mel_freqs = librosa.mel_frequencies(n_mels=n_mels, fmax=analyzer.sr//2)
+    
+    # Plot 1: Mel Spectrogram (dB)
+    im1 = axes[0,0].imshow(mel_spec_db, aspect='auto', origin='lower', 
+                          extent=[times[0], times[-1], mel_freqs[0], mel_freqs[-1]], cmap='viridis')
+    axes[0,0].set_title('1. Mel Spectrogram (dB)')
+    axes[0,0].set_xlabel('เวลา (วินาที)')
+    axes[0,0].set_ylabel('ความถี่ (Hz)')
+    plt.colorbar(im1, ax=axes[0,0], label='Power (dB)')
+    
+    # 2. Linear Scale Mel Spectrogram
+    im2 = axes[0,1].imshow(mel_spec, aspect='auto', origin='lower',
+                          extent=[times[0], times[-1], mel_freqs[0], mel_freqs[-1]], cmap='plasma')
+    axes[0,1].set_title('2. Mel Spectrogram (Linear Scale)')
+    axes[0,1].set_xlabel('เวลา (วินาที)')
+    axes[0,1].set_ylabel('ความถี่ (Hz)')
+    plt.colorbar(im2, ax=axes[0,1], label='Power')
+    
+    # 3. Mel-frequency Cepstral Coefficients (MFCCs)
+    mfccs = librosa.feature.mfcc(y=analyzer.y, sr=analyzer.sr, hop_length=hop_length, n_mfcc=13)
+    im3 = axes[1,0].imshow(mfccs, aspect='auto', origin='lower', 
+                          extent=[times[0], times[-1], 1, 13], cmap='coolwarm')
+    axes[1,0].set_title('3. MFCCs (13 coefficients)')
+    axes[1,0].set_xlabel('เวลา (วินาที)')
+    axes[1,0].set_ylabel('MFCC Coefficient')
+    plt.colorbar(im3, ax=axes[1,0], label='MFCC Value')
+    
+    # 4. Delta MFCCs (first derivative)
+    mfccs_delta = librosa.feature.delta(mfccs)
+    im4 = axes[1,1].imshow(mfccs_delta, aspect='auto', origin='lower',
+                          extent=[times[0], times[-1], 1, 13], cmap='RdBu')
+    axes[1,1].set_title('4. Delta MFCCs (First Derivative)')
+    axes[1,1].set_xlabel('เวลา (วินาที)')
+    axes[1,1].set_ylabel('MFCC Coefficient')
+    plt.colorbar(im4, ax=axes[1,1], label='Delta MFCC Value')
+    
+    # 5. Mel Spectrogram Statistics
+    mel_mean = np.mean(mel_spec_db, axis=1)
+    mel_std = np.std(mel_spec_db, axis=1)
+    mel_max = np.max(mel_spec_db, axis=1)
+    mel_min = np.min(mel_spec_db, axis=1)
+    
+    axes[2,0].plot(mel_freqs, mel_mean, 'b-', linewidth=2, label='Mean', alpha=0.8)
+    axes[2,0].fill_between(mel_freqs, mel_mean - mel_std, mel_mean + mel_std, 
+                          alpha=0.3, color='blue', label='±1 Std Dev')
+    axes[2,0].plot(mel_freqs, mel_max, 'r--', linewidth=1, label='Max', alpha=0.7)
+    axes[2,0].plot(mel_freqs, mel_min, 'g--', linewidth=1, label='Min', alpha=0.7)
+    axes[2,0].set_title('5. Mel Spectrogram Statistics')
+    axes[2,0].set_xlabel('ความถี่ (Hz)')
+    axes[2,0].set_ylabel('Power (dB)')
+    axes[2,0].legend()
+    axes[2,0].grid(True, alpha=0.3)
+    axes[2,0].set_xscale('log')
+    
+    # 6. Spectral Features Summary
+    # คำนวณ spectral features จาก mel spectrogram
+    spectral_centroid_mel = np.sum(mel_freqs[:, np.newaxis] * mel_spec, axis=0) / np.sum(mel_spec, axis=0)
+    spectral_rolloff_mel = []
+    spectral_bandwidth_mel = []
+    
+    for frame in range(mel_spec.shape[1]):
+        cumsum = np.cumsum(mel_spec[:, frame])
+        total_energy = cumsum[-1]
+        if total_energy > 0:
+            rolloff_idx = np.where(cumsum >= 0.85 * total_energy)[0]
+            if len(rolloff_idx) > 0:
+                spectral_rolloff_mel.append(mel_freqs[rolloff_idx[0]])
+            else:
+                spectral_rolloff_mel.append(mel_freqs[-1])
+            
+            # Bandwidth calculation
+            centroid = spectral_centroid_mel[frame]
+            bandwidth = np.sqrt(np.sum(((mel_freqs - centroid) ** 2)[:, np.newaxis] * 
+                                     mel_spec[:, frame:frame+1], axis=0) / np.sum(mel_spec[:, frame:frame+1], axis=0))
+            spectral_bandwidth_mel.append(bandwidth[0] if len(bandwidth) > 0 else 0)
+        else:
+            spectral_rolloff_mel.append(0)
+            spectral_bandwidth_mel.append(0)
+    
+    # Plot spectral features over time
+    axes[2,1].plot(times, spectral_centroid_mel, 'r-', linewidth=2, label='Spectral Centroid', alpha=0.8)
+    axes[2,1].plot(times, spectral_rolloff_mel, 'g-', linewidth=2, label='Spectral Rolloff (85%)', alpha=0.8)
+    axes[2,1].plot(times, spectral_bandwidth_mel, 'b-', linewidth=2, label='Spectral Bandwidth', alpha=0.8)
+    axes[2,1].set_title('6. Spectral Features Over Time')
+    axes[2,1].set_xlabel('เวลา (วินาที)')
+    axes[2,1].set_ylabel('ความถี่ (Hz)')
+    axes[2,1].legend()
+    axes[2,1].grid(True, alpha=0.3)
+    axes[2,1].set_yscale('log')
+    
+    # Add summary statistics text
+    summary_text = f"""Mel Spectrogram Summary:
+
+Time Duration: {analyzer.duration:.2f} sec
+Frequency Range: {mel_freqs[0]:.1f} - {mel_freqs[-1]:.1f} Hz
+Mel Bands: {n_mels}
+Hop Length: {hop_length} samples
+FFT Size: {n_fft}
+
+Average Spectral Centroid: {np.mean(spectral_centroid_mel):.1f} Hz
+Average Spectral Rolloff: {np.mean(spectral_rolloff_mel):.1f} Hz
+Average Spectral Bandwidth: {np.mean(spectral_bandwidth_mel):.1f} Hz
+
+Max Power: {np.max(mel_spec_db):.1f} dB
+Min Power: {np.min(mel_spec_db):.1f} dB
+Dynamic Range: {np.max(mel_spec_db) - np.min(mel_spec_db):.1f} dB"""
+    
+    # Add text box with summary
+    fig.text(0.02, 0.02, summary_text, fontsize=9, verticalalignment='bottom',
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow", alpha=0.8))
+    
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.25)  # Make room for summary text
+    return fig
+
 def run_single_analysis(analyzer):
     """รันการวิเคราะห์ไฟล์เดียว"""
     while True:
@@ -1188,9 +1471,10 @@ def run_single_analysis(analyzer):
         print("1. Waveform Analysis (พร้อมฟังก์ชันซูม)")
         print("2. Pitch Contour & Melody Analysis (วิเคราะห์ความถี่และทำนอง)")
         print("3. Frequency Domain Analysis")
-        print("4. ออกจากโปรแกรม")
+        print("4. Mel Spectrogram Analysis (วิเคราะห์ Mel Spectrogram)")
+        print("5. ออกจากโปรแกรม")
         
-        analysis_choice = input("เลือก (1-4): ").strip()
+        analysis_choice = input("เลือก (1-5): ").strip()
         
         if analysis_choice == "1":
             print("กำลังสร้าง Waveform Analysis...")
@@ -1207,9 +1491,14 @@ def run_single_analysis(analyzer):
             analyzer.plot_frequency_domain_analysis()
             
         elif analysis_choice == "4":
+            print("กำลังสร้าง Mel Spectrogram Analysis...")
+            print("กำลังวิเคราะห์ Mel Spectrogram... (อาจใช้เวลาสักครู่)")
+            analyzer.plot_mel_spectrogram_analysis()
+            
+        elif analysis_choice == "5":
             break
         else:
-            print("กรุณาเลือก 1-4")
+            print("กรุณาเลือก 1-5")
 
 def run_comparison_analysis(human_path, ai_path):
     """รันการวิเคราะห์เปรียบเทียบ"""
